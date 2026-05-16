@@ -1,0 +1,8 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  '@clerk/shared': true
+  esbuild: false
+  sharp: true
+  unrs-resolver: true

@@ -1,0 +1,30 @@
+{
+  "name": "@alpaca/db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "migrate": "node --import tsx/esm src/migrate.ts up",
+    "migrate:rollback": "node --import tsx/esm src/migrate.ts down"
+  },
+  "dependencies": {
+    "pg": "8.13.3",
+    "node-pg-migrate": "7.9.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.11.11",
+    "tsx": "4.19.4",
+    "typescript": "5.8.3"
+  }
+}
