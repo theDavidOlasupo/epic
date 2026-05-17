@@ -2042,3 +2042,108 @@ The Next.js frontend uses:
 - **CI**: GitHub Actions running unit + property tests on every PR; integration tests on merge to main
 - **Test database**: Separate RDS instance in the `test` environment; migrations run before each test suite
 
+
+
+---
+
+## Guest Checkout Design
+
+### Overview
+
+Guest checkout allows drivers to book and pay for parking without creating an account. This reduces friction and increases booking conversion. The implementation uses a "guest user" pattern — a temporary `users` row is created for each guest booking, which can later be claimed by a real Clerk account.
+
+### Authentication Strategy
+
+| User type | Auth required |
+|---|---|
+| Driver — searching / viewing spots | None |
+| Driver — guest checkout | None (email + phone collected at checkout) |
+| Driver — authenticated checkout | Clerk JWT |
+| Host — listing spots | Clerk JWT (required) |
+| Admin | Clerk JWT (required) |
+
+### Guest User Model
+
+When a guest books, the system creates a `users` row with:
+- `is_guest = TRUE`
+- `clerk_user_id = "guest_<uuid>"` (synthetic, not a real Clerk ID)
+- `email` = guest's email
+- `phone_number` = guest's phone
+- `role = "driver"`
+- `status = "active"`
+
+The `bookings` table gets a `guest_token TEXT UNIQUE` column — a UUID stored on the booking that allows unauthenticated access to the booking confirmation.
+
+### Guest Checkout Flow
+
+```
+1. Guest searches → selects spot → clicks Reserve
+2. /bookings/new shows guest checkout form:
+   - Email address
+   - Phone number
+   - Vehicle licence plate
+   - Date/time (pre-filled from search)
+3. Guest clicks "Continue to Payment"
+4. POST /api/v1/bookings/guest (unauthenticated):
+   - Creates guest users row
+   - Creates vehicle record
+   - Creates booking (pending)
+   - Creates checkout lock
+   - Creates Stripe PaymentIntent
+   - Returns: { bookingId, guestToken, clientSecret }
+5. Stripe Elements card input shown
+6. Guest pays → Stripe webhook confirms → booking confirmed
+7. Confirmation page shows:
+   - Booking details
+   - Entry instructions
+   - "Create account to save your details" prompt
+   - [Create Account] button → Clerk sign-up with email pre-filled + guestToken param
+```
+
+### Account Claiming Flow
+
+```
+1. Guest clicks "Create Account" on confirmation page
+2. Redirected to /sign-up?guestToken=<token>&email=<email>
+3. Guest completes Clerk sign-up
+4. Clerk fires user.created webhook → backend creates real users row
+5. Frontend calls POST /api/v1/auth/claim-guest-account:
+   - Auth: real Clerk JWT
+   - Body: { guestToken }
+   - Backend finds guest users row by email match
+   - Updates: clerk_user_id = real Clerk ID, is_guest = false
+   - All bookings/vehicles now belong to real account
+6. Guest is now a full user with booking history intact
+```
+
+### New API Endpoints
+
+```
+POST /api/v1/bookings/guest          (unauthenticated)
+  Body: { spotId, startTime, endTime, email, phone, licencePlate, licencePlateRegion }
+  Returns: { bookingId, guestToken, clientSecret, paymentIntentId }
+
+GET  /api/v1/bookings/guest/:token   (unauthenticated)
+  Returns: full booking detail for the given guest_token
+
+POST /api/v1/auth/claim-guest-account  (authenticated — real Clerk JWT)
+  Body: { guestToken }
+  Returns: { message: "Account claimed" }
+```
+
+### Database Changes
+
+```sql
+-- Migration: add guest support
+ALTER TABLE users ADD COLUMN is_guest BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE bookings ADD COLUMN guest_token TEXT UNIQUE;
+CREATE INDEX idx_bookings_guest_token ON bookings(guest_token);
+```
+
+### Middleware Changes
+
+- `/api/v1/parking-spots/search` — already unauthenticated ✓
+- `/api/v1/parking-spots/:id` — already unauthenticated ✓
+- `/api/v1/bookings/guest` — new, unauthenticated
+- `/api/v1/bookings/guest/:token` — new, unauthenticated
+- All other booking/payment endpoints — remain authenticated

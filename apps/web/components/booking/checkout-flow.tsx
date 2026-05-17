@@ -30,17 +30,21 @@ interface CheckoutFlowProps {
   endTime: string;
 }
 
-// ── Inner payment form (needs Stripe context) ──────────────────────────────
+// ── Stripe payment form ────────────────────────────────────────────────────
 function PaymentForm({
   bookingId,
   totalPrice,
   currency,
+  isGuest,
+  guestToken,
   onSuccess,
 }: {
   bookingId: string;
   totalPrice: number;
   currency: string;
-  onSuccess: (bookingId: string, totalPrice: number, currency: string) => void;
+  isGuest: boolean;
+  guestToken?: string;
+  onSuccess: (bookingId: string, totalPrice: number, currency: string, guestToken?: string) => void;
 }) {
   const stripe = useStripe();
   const elements = useElements();
@@ -53,28 +57,21 @@ function PaymentForm({
     setError('');
 
     const { error: submitError } = await elements.submit();
-    if (submitError) {
-      setError(submitError.message ?? 'Payment failed');
-      setPaying(false);
-      return;
-    }
+    if (submitError) { setError(submitError.message ?? 'Payment failed'); setPaying(false); return; }
 
     const { error: confirmError } = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: `${window.location.origin}/bookings/${bookingId}/confirmation`,
+        return_url: isGuest
+          ? `${window.location.origin}/bookings/guest/${guestToken}`
+          : `${window.location.origin}/bookings/${bookingId}/confirmation`,
       },
       redirect: 'if_required',
     });
 
-    if (confirmError) {
-      setError(confirmError.message ?? 'Payment failed');
-      setPaying(false);
-      return;
-    }
+    if (confirmError) { setError(confirmError.message ?? 'Payment failed'); setPaying(false); return; }
 
-    // Payment succeeded without redirect — show confirmation inline
-    onSuccess(bookingId, totalPrice, currency);
+    onSuccess(bookingId, totalPrice, currency, guestToken);
     setPaying(false);
   }
 
@@ -85,16 +82,14 @@ function PaymentForm({
       <Button className="w-full" onClick={handlePay} disabled={!stripe || paying}>
         {paying ? 'Processing...' : `Pay $${(totalPrice / 100).toFixed(2)} ${currency}`}
       </Button>
-      <p className="text-center text-xs text-gray-400">
-        Secured by Stripe. You won't be charged until you click Pay.
-      </p>
+      <p className="text-center text-xs text-gray-400">Secured by Stripe.</p>
     </div>
   );
 }
 
 // ── Main checkout flow ─────────────────────────────────────────────────────
 export function CheckoutFlow({ spotId, startTime, endTime }: CheckoutFlowProps) {
-  const { getToken } = useAuth();
+  const { isSignedIn, getToken } = useAuth();
 
   const [spot, setSpot] = useState<SpotSummary | null>(null);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -102,7 +97,7 @@ export function CheckoutFlow({ spotId, startTime, endTime }: CheckoutFlowProps) 
   const [showAddForm, setShowAddForm] = useState(false);
   const [loadingVehicles, setLoadingVehicles] = useState(true);
 
-  // New vehicle form
+  // Authenticated vehicle form
   const [make, setMake] = useState('');
   const [model, setModel] = useState('');
   const [year, setYear] = useState(String(CURRENT_YEAR));
@@ -110,9 +105,16 @@ export function CheckoutFlow({ spotId, startTime, endTime }: CheckoutFlowProps) 
   const [licencePlate, setLicencePlate] = useState('');
   const [licencePlateRegion, setLicencePlateRegion] = useState('ON');
 
+  // Guest-specific fields
+  const [guestEmail, setGuestEmail] = useState('');
+  const [guestPhone, setGuestPhone] = useState('');
+  const [guestPlate, setGuestPlate] = useState('');
+  const [guestPlateRegion, setGuestPlateRegion] = useState('ON');
+
   // Payment state
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [bookingId, setBookingId] = useState<string | null>(null);
+  const [guestToken, setGuestToken] = useState<string | undefined>(undefined);
   const [totalPrice, setTotalPrice] = useState(0);
   const [currency, setCurrency] = useState('CAD');
   const [creatingBooking, setCreatingBooking] = useState(false);
@@ -120,7 +122,9 @@ export function CheckoutFlow({ spotId, startTime, endTime }: CheckoutFlowProps) 
 
   // Confirmation state
   const [confirmed, setConfirmed] = useState(false);
-  const [confirmedData, setConfirmedData] = useState<{ bookingId: string; totalPrice: number; currency: string } | null>(null);
+  const [confirmedData, setConfirmedData] = useState<{
+    bookingId: string; totalPrice: number; currency: string; guestToken?: string;
+  } | null>(null);
 
   const durationHours = (new Date(endTime).getTime() - new Date(startTime).getTime()) / (1000 * 60 * 60);
   const startDateStr = new Date(startTime).toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -128,23 +132,24 @@ export function CheckoutFlow({ spotId, startTime, endTime }: CheckoutFlowProps) 
   const endHourStr = new Date(endTime).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit' });
 
   const init = useCallback(async () => {
-    const token = await getToken();
-    const [spotRes, vehiclesRes] = await Promise.all([
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/parking-spots/${spotId}`),
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/users/me/vehicles`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }),
-    ]);
+    const spotRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/parking-spots/${spotId}`);
     if (spotRes.ok) setSpot(await spotRes.json() as SpotSummary);
-    if (vehiclesRes.ok) {
-      const data = await vehiclesRes.json() as Vehicle[];
-      setVehicles(data);
-      const def = data.find((v) => v.isDefault) ?? data[0];
-      if (def) setSelectedVehicleId(def.id);
-      if (data.length === 0) setShowAddForm(true);
+
+    if (isSignedIn) {
+      const token = await getToken();
+      const vehiclesRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/users/me/vehicles`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (vehiclesRes.ok) {
+        const data = await vehiclesRes.json() as Vehicle[];
+        setVehicles(data);
+        const def = data.find((v) => v.isDefault) ?? data[0];
+        if (def) setSelectedVehicleId(def.id);
+        if (data.length === 0) setShowAddForm(true);
+      }
     }
     setLoadingVehicles(false);
-  }, [spotId, getToken]);
+  }, [spotId, isSignedIn, getToken]);
 
   useEffect(() => { void init(); }, [init]);
 
@@ -152,6 +157,35 @@ export function CheckoutFlow({ spotId, startTime, endTime }: CheckoutFlowProps) 
     setCreatingBooking(true);
     setError('');
     try {
+      if (!isSignedIn) {
+        // Guest checkout
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/bookings/guest`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            spotId, startTime, endTime,
+            email: guestEmail, phone: guestPhone,
+            licencePlate: guestPlate, licencePlateRegion: guestPlateRegion,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json() as { error: { message: string } };
+          setError(err.error?.message ?? 'Failed to create booking');
+          return;
+        }
+        const data = await res.json() as {
+          bookingId: string; guestToken: string; clientSecret: string;
+          totalPrice: number; currency: string;
+        };
+        setBookingId(data.bookingId);
+        setGuestToken(data.guestToken);
+        setTotalPrice(data.totalPrice);
+        setCurrency(data.currency);
+        setClientSecret(data.clientSecret);
+        return;
+      }
+
+      // Authenticated checkout
       const token = await getToken();
       let vehicleId = selectedVehicleId;
 
@@ -161,44 +195,28 @@ export function CheckoutFlow({ spotId, startTime, endTime }: CheckoutFlowProps) 
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ make, model, year: Number(year), sizeClass, licencePlate, licencePlateRegion, isDefault: vehicles.length === 0 }),
         });
-        if (!vRes.ok) {
-          const err = await vRes.json() as { error: { message: string } };
-          setError(err.error?.message ?? 'Failed to save vehicle');
-          return;
-        }
+        if (!vRes.ok) { const err = await vRes.json() as { error: { message: string } }; setError(err.error?.message ?? 'Failed to save vehicle'); return; }
         vehicleId = (await vRes.json() as Vehicle).id;
       }
 
-      // Create booking
       const bookingRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/bookings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ parkingSpotId: spotId, vehicleId, startTime, endTime }),
       });
-      if (!bookingRes.ok) {
-        const err = await bookingRes.json() as { error: { message: string } };
-        setError(err.error?.message ?? 'Failed to create booking');
-        return;
-      }
+      if (!bookingRes.ok) { const err = await bookingRes.json() as { error: { message: string } }; setError(err.error?.message ?? 'Failed to create booking'); return; }
       const bookingData = await bookingRes.json() as { id: string; totalPrice: number; currency: string };
 
-      // Acquire checkout lock
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/bookings/${bookingData.id}/checkout-lock`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        method: 'POST', headers: { Authorization: `Bearer ${token}` },
       });
 
-      // Create payment intent — get clientSecret for Stripe Elements
       const intentRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/payments/create-intent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ bookingId: bookingData.id }),
       });
-      if (!intentRes.ok) {
-        const err = await intentRes.json() as { error: { message: string } };
-        setError(err.error?.message ?? 'Payment setup failed');
-        return;
-      }
+      if (!intentRes.ok) { const err = await intentRes.json() as { error: { message: string } }; setError(err.error?.message ?? 'Payment setup failed'); return; }
       const { clientSecret: cs } = await intentRes.json() as { clientSecret: string };
 
       setBookingId(bookingData.id);
@@ -234,9 +252,23 @@ export function CheckoutFlow({ spotId, startTime, endTime }: CheckoutFlowProps) 
             <p className="text-sm text-blue-800">{spot.entryInstructions}</p>
           </div>
         )}
+
+        {/* Guest account creation prompt */}
+        {!isSignedIn && confirmedData.guestToken && (
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-left">
+            <p className="font-semibold text-gray-900 mb-1">Save your booking history</p>
+            <p className="text-sm text-gray-600 mb-3">Create a free account to access your bookings anytime, save your vehicle, and check out faster next time.</p>
+            <Button asChild className="w-full">
+              <Link href={`/sign-up?guestToken=${confirmedData.guestToken}&email=${encodeURIComponent(guestEmail)}`}>
+                Create Account
+              </Link>
+            </Button>
+          </div>
+        )}
+
         <div className="flex flex-col gap-3">
-          <Button asChild><Link href="/search">Find more parking</Link></Button>
-          <Button variant="outline" asChild><Link href="/bookings">View my bookings</Link></Button>
+          <Button variant="outline" asChild><Link href="/search">Find more parking</Link></Button>
+          {isSignedIn && <Button variant="outline" asChild><Link href="/bookings">View my bookings</Link></Button>}
         </div>
       </div>
     );
@@ -256,14 +288,15 @@ export function CheckoutFlow({ spotId, startTime, endTime }: CheckoutFlowProps) 
             <span className="font-semibold text-gray-900">${(totalPrice / 100).toFixed(2)} {currency}</span>
           </div>
         </div>
-
         <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: 'stripe' } }}>
           <PaymentForm
             bookingId={bookingId}
             totalPrice={totalPrice}
             currency={currency}
-            onSuccess={(id, price, curr) => {
-              setConfirmedData({ bookingId: id, totalPrice: price, currency: curr });
+            isGuest={!isSignedIn}
+            guestToken={guestToken}
+            onSuccess={(id, price, curr, gt) => {
+              setConfirmedData({ bookingId: id, totalPrice: price, currency: curr, guestToken: gt });
               setConfirmed(true);
             }}
           />
@@ -272,7 +305,7 @@ export function CheckoutFlow({ spotId, startTime, endTime }: CheckoutFlowProps) 
     );
   }
 
-  // ── Pre-payment view (vehicle selection) ────────────────────────────────
+  // ── Pre-payment view ───────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       {/* Spot + time summary */}
@@ -290,40 +323,71 @@ export function CheckoutFlow({ spotId, startTime, endTime }: CheckoutFlowProps) 
         </div>
       </div>
 
-      {/* Vehicle selection */}
-      <div>
-        <h2 className="mb-3 font-semibold text-gray-900">Your vehicle</h2>
-        {loadingVehicles ? <p className="text-sm text-gray-400">Loading vehicles...</p> : (
-          <div className="space-y-2">
-            {vehicles.map((v) => (
-              <label key={v.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${selectedVehicleId === v.id && !showAddForm ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-300'}`}>
-                <input type="radio" name="vehicle" value={v.id} checked={selectedVehicleId === v.id && !showAddForm} onChange={() => { setSelectedVehicleId(v.id); setShowAddForm(false); }} className="accent-black" />
-                <div>
-                  <p className="font-medium text-gray-900">{v.year} {v.make} {v.model}{v.isDefault && <span className="ml-2 text-xs text-gray-400">(default)</span>}</p>
-                  <p className="text-xs text-gray-500">{SIZE_CLASS_LABELS[v.sizeClass] ?? v.sizeClass} · {v.licencePlate} ({v.licencePlateRegion})</p>
-                </div>
-              </label>
-            ))}
-            <label className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${showAddForm ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-300'}`}>
-              <input type="radio" name="vehicle" checked={showAddForm} onChange={() => setShowAddForm(true)} className="accent-black" />
-              <span className="font-medium text-gray-900">+ Add a new vehicle</span>
-            </label>
-            {showAddForm && (
-              <div className="rounded-xl border border-gray-200 p-4 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  {[{ label: 'Make', value: make, set: setMake, placeholder: 'Toyota' }, { label: 'Model', value: model, set: setModel, placeholder: 'Camry' }].map(({ label, value, set, placeholder }) => (
-                    <div key={label}><label className="text-xs font-medium text-gray-500">{label}</label><input className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" placeholder={placeholder} value={value} onChange={(e) => set(e.target.value)} /></div>
-                  ))}
-                  <div><label className="text-xs font-medium text-gray-500">Year</label><input type="number" min="1990" max={CURRENT_YEAR + 1} className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" value={year} onChange={(e) => setYear(e.target.value)} /></div>
-                  <div><label className="text-xs font-medium text-gray-500">Size</label><select className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" value={sizeClass} onChange={(e) => setSizeClass(e.target.value)}>{SIZE_CLASSES.map((s) => <option key={s} value={s}>{SIZE_CLASS_LABELS[s]}</option>)}</select></div>
-                  <div><label className="text-xs font-medium text-gray-500">Licence Plate</label><input className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" placeholder="ABC 123" value={licencePlate} onChange={(e) => setLicencePlate(e.target.value)} /></div>
-                  <div><label className="text-xs font-medium text-gray-500">Province/State</label><input className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" placeholder="ON" value={licencePlateRegion} onChange={(e) => setLicencePlateRegion(e.target.value)} /></div>
-                </div>
-              </div>
-            )}
+      {/* Guest form OR authenticated vehicle selector */}
+      {!isSignedIn ? (
+        <div className="space-y-3">
+          <h2 className="font-semibold text-gray-900">Your details</h2>
+          <p className="text-sm text-gray-500">
+            No account needed.{' '}
+            <Link href={`/sign-in?redirect=/bookings/new?spotId=${spotId}&startTime=${startTime}&endTime=${endTime}`} className="underline">
+              Sign in
+            </Link>{' '}
+            for faster checkout.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-gray-500">Email address</label>
+              <input type="email" className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" placeholder="you@example.com" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-medium text-gray-500">Phone number</label>
+              <input type="tel" className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" placeholder="+1 416 555 0100" value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500">Licence Plate</label>
+              <input className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" placeholder="ABC 123" value={guestPlate} onChange={(e) => setGuestPlate(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500">Province/State</label>
+              <input className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" placeholder="ON" value={guestPlateRegion} onChange={(e) => setGuestPlateRegion(e.target.value)} />
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div>
+          <h2 className="mb-3 font-semibold text-gray-900">Your vehicle</h2>
+          {loadingVehicles ? <p className="text-sm text-gray-400">Loading vehicles...</p> : (
+            <div className="space-y-2">
+              {vehicles.map((v) => (
+                <label key={v.id} className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${selectedVehicleId === v.id && !showAddForm ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                  <input type="radio" name="vehicle" value={v.id} checked={selectedVehicleId === v.id && !showAddForm} onChange={() => { setSelectedVehicleId(v.id); setShowAddForm(false); }} className="accent-black" />
+                  <div>
+                    <p className="font-medium text-gray-900">{v.year} {v.make} {v.model}{v.isDefault && <span className="ml-2 text-xs text-gray-400">(default)</span>}</p>
+                    <p className="text-xs text-gray-500">{SIZE_CLASS_LABELS[v.sizeClass] ?? v.sizeClass} · {v.licencePlate} ({v.licencePlateRegion})</p>
+                  </div>
+                </label>
+              ))}
+              <label className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${showAddForm ? 'border-gray-900 bg-gray-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                <input type="radio" name="vehicle" checked={showAddForm} onChange={() => setShowAddForm(true)} className="accent-black" />
+                <span className="font-medium text-gray-900">+ Add a new vehicle</span>
+              </label>
+              {showAddForm && (
+                <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    {[{ label: 'Make', value: make, set: setMake, placeholder: 'Toyota' }, { label: 'Model', value: model, set: setModel, placeholder: 'Camry' }].map(({ label, value, set, placeholder }) => (
+                      <div key={label}><label className="text-xs font-medium text-gray-500">{label}</label><input className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" placeholder={placeholder} value={value} onChange={(e) => set(e.target.value)} /></div>
+                    ))}
+                    <div><label className="text-xs font-medium text-gray-500">Year</label><input type="number" min="1990" max={CURRENT_YEAR + 1} className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" value={year} onChange={(e) => setYear(e.target.value)} /></div>
+                    <div><label className="text-xs font-medium text-gray-500">Size</label><select className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" value={sizeClass} onChange={(e) => setSizeClass(e.target.value)}>{SIZE_CLASSES.map((s) => <option key={s} value={s}>{SIZE_CLASS_LABELS[s]}</option>)}</select></div>
+                    <div><label className="text-xs font-medium text-gray-500">Licence Plate</label><input className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" placeholder="ABC 123" value={licencePlate} onChange={(e) => setLicencePlate(e.target.value)} /></div>
+                    <div><label className="text-xs font-medium text-gray-500">Province/State</label><input className="mt-1 w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black" placeholder="ON" value={licencePlateRegion} onChange={(e) => setLicencePlateRegion(e.target.value)} /></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">
         <p className="font-medium text-gray-900 mb-1">Cancellation policy</p>
@@ -332,7 +396,16 @@ export function CheckoutFlow({ spotId, startTime, endTime }: CheckoutFlowProps) 
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
-      <Button className="w-full" onClick={handleConfirm} disabled={creatingBooking || loadingVehicles || (showAddForm && (!make || !model || !licencePlate))}>
+      <Button
+        className="w-full"
+        onClick={handleConfirm}
+        disabled={
+          creatingBooking ||
+          (!isSignedIn && (!guestEmail || !guestPhone || !guestPlate)) ||
+          (isSignedIn && loadingVehicles) ||
+          (isSignedIn && showAddForm && (!make || !model || !licencePlate))
+        }
+      >
         {creatingBooking ? 'Setting up payment...' : 'Continue to Payment →'}
       </Button>
     </div>

@@ -4,7 +4,7 @@ import { authenticate, requireRole } from '../middleware/authenticate.js';
 import { query, withTransaction } from '@alpaca/db';
 import { Errors } from '../lib/errors.js';
 import type { Booking } from '@alpaca/types';
-import { enqueueLockExpiry } from '../lib/queue.js';
+import { enqueueLockExpiry, enqueueEmail } from '../lib/queue.js';
 import type { AppEnv } from '../lib/hono-types.js';
 import type { PoolClient } from 'pg';
 
@@ -300,7 +300,9 @@ bookingsRouter.post('/:id/cancel', authenticate, async (c) => {
     );
   });
 
-  console.log(`[EMAIL STUB] Cancellation emails for booking ${id}, refund: ${isEligibleForRefund}`);
+  console.log(`[EMAIL] Sending cancellation emails for booking ${id}, refund: ${isEligibleForRefund}`);
+  await enqueueEmail('booking_cancelled_driver', { bookingId: id, refunded: isEligibleForRefund });
+  await enqueueEmail('booking_cancelled_host', { bookingId: id });
 
   const updated = await query<Booking>(
     `SELECT id, driver_id as "driverId", parking_spot_id as "parkingSpotId",

@@ -1,25 +1,17 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import Stripe from 'stripe';
+import type Stripe from 'stripe';
 import { authenticate, requireRole } from '../middleware/authenticate.js';
 import { query, withTransaction } from '@alpaca/db';
 import { Errors } from '../lib/errors.js';
 import { enqueueEmail } from '../lib/queue.js';
 import type { AppEnv } from '../lib/hono-types.js';
 import type { PoolClient } from 'pg';
+import { getStripe } from '../lib/stripe.js';
 
 export const paymentsRouter = new Hono<AppEnv>();
 
 const PLATFORM_FEE_RATE = 0.15;
-
-// Initialise Stripe — lazy so it only fails if actually used without a key
-function getStripe(): Stripe {
-  const key = process.env['STRIPE_SECRET_KEY'];
-  if (!key || key === 'sk_test_placeholder') {
-    throw new Error('STRIPE_SECRET_KEY is not configured');
-  }
-  return new Stripe(key, { apiVersion: '2026-04-22.dahlia' });
-}
 
 const createIntentSchema = z.object({
   bookingId: z.string().uuid(),

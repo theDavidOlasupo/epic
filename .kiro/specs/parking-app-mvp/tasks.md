@@ -274,3 +274,27 @@
 - [ ] 24.1 Write OpenAPI 3.x specification covering all `/api/v1` and `/api/v1/admin` endpoints
 - [ ] 24.2 Document all request bodies, query parameters, response schemas, and error codes
 - [ ] 24.3 Publish spec as a static file served from the API or a docs site
+
+
+---
+
+## Task 25: Guest Checkout
+
+### Backend
+
+- [ ] 25.1 Write migration: add `is_guest BOOLEAN NOT NULL DEFAULT FALSE` to `users` table
+- [ ] 25.2 Write migration: add `guest_token TEXT UNIQUE` to `bookings` table; add index on `guest_token`
+- [ ] 25.3 Implement `POST /api/v1/bookings/guest` (unauthenticated) — accepts `{ spotId, startTime, endTime, email, phone, licencePlate, licencePlateRegion }`; creates guest user row, vehicle, booking, checkout lock, and Stripe PaymentIntent in a single transaction; returns `{ bookingId, guestToken, clientSecret, paymentIntentId }`
+- [ ] 25.4 Implement `GET /api/v1/bookings/guest/:token` (unauthenticated) — returns full booking detail for the given `guest_token`; returns 404 if token not found
+- [ ] 25.5 Implement `POST /api/v1/auth/claim-guest-account` (authenticated) — accepts `{ guestToken }`; finds guest `users` row by email match with the authenticated Clerk user; updates `clerk_user_id` to real Clerk ID and sets `is_guest = false`; returns 422 if no matching guest booking found
+- [ ] 25.6 Update Stripe webhook handler to send guest booking confirmation email (using guest email from `users` row) when `payment_intent.succeeded` fires for a guest booking
+
+### Frontend
+
+- [ ] 25.7 Remove auth gate from `/search` and `/parking/[id]` — these pages should be accessible without login
+- [ ] 25.8 Update `BookingWidget` — when user is not authenticated, clicking Reserve navigates to `/bookings/new` without requiring login
+- [ ] 25.9 Update `/bookings/new` checkout flow — detect unauthenticated state and show guest checkout form (email, phone, licence plate) instead of vehicle selector
+- [ ] 25.10 Wire guest checkout form to `POST /api/v1/bookings/guest` and Stripe Elements
+- [ ] 25.11 Update confirmation page — when booking was made as guest, show "Create account to save your details" prompt with [Create Account] button that links to `/sign-up?guestToken=<token>&email=<email>`
+- [ ] 25.12 Build `/bookings/guest/:token` page — unauthenticated booking lookup page showing confirmation details
+- [ ] 25.13 Update `/sign-up` page — read `guestToken` and `email` from query params; pre-fill email; after sign-up, call `POST /api/v1/auth/claim-guest-account` with the `guestToken`

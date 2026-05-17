@@ -8,6 +8,7 @@ import { bookingsRouter } from './routes/bookings.js';
 import { paymentsRouter } from './routes/payments.js';
 import { adminRouter } from './routes/admin.js';
 import { authRouter } from './routes/auth.js';
+import { guestBookingsRouter } from './routes/guest-bookings.js';
 import { errorHandler } from './middleware/error-handler.js';
 import type { AppEnv } from './lib/hono-types.js';
 
@@ -32,6 +33,7 @@ app.route('/api/v1/auth', authRouter);
 app.route('/api/v1/users', usersRouter);
 app.route('/api/v1/users/me/vehicles', vehiclesRouter);
 app.route('/api/v1/parking-spots', parkingSpotsRouter);
+app.route('/api/v1/bookings/guest', guestBookingsRouter);
 app.route('/api/v1/bookings', bookingsRouter);
 app.route('/api/v1/payments', paymentsRouter);
 app.route('/api/v1/admin', adminRouter);

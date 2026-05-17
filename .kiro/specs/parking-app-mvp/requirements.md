@@ -591,3 +591,27 @@ The following features are explicitly excluded from the MVP and will be addresse
 - Event-specific parking pages
 - Walking route guidance (post-MVP: replace straight-line distance with walking time)
 - Monthly parking subscriptions and corporate accounts
+
+---
+
+### Requirement 19: Guest Checkout
+
+**User Story:** As a driver who doesn't want to create an account, I want to search, book, and pay for parking without registering, so that I can complete my booking with minimal friction.
+
+#### Acceptance Criteria
+
+1. THE System SHALL allow a Driver to search for parking spots and view spot details without authentication.
+2. THE System SHALL allow a Driver to complete a booking and payment without creating an account (guest checkout).
+3. WHEN a guest books, THE System SHALL require: email address, phone number, vehicle licence plate, booking date/time, and payment information.
+4. WHEN a guest booking is created, THE System SHALL create a temporary `users` row with `is_guest = TRUE` and a generated `clerk_user_id` of the form `guest_<uuid>`.
+5. THE System SHALL store a `guest_token` (UUID) on the booking to allow the guest to access their booking confirmation without authentication.
+6. WHEN a guest booking is confirmed, THE System SHALL send a confirmation email to the guest's email address that includes the booking details and a link to view the booking using the `guest_token`.
+7. AFTER a successful guest booking, THE System SHALL prompt the guest to create an account to save their booking history, vehicle details, and enable faster repeat checkout.
+8. WHEN a guest chooses to create an account, THE System SHALL redirect them to the Clerk sign-up page with their email pre-filled and a `guestToken` query parameter.
+9. THE System SHALL expose `POST /api/v1/auth/claim-guest-account` — an authenticated endpoint that accepts a `guestToken`, finds the matching guest `users` row by email, and updates `clerk_user_id` to the real Clerk user ID and sets `is_guest = FALSE`. All existing bookings and vehicles are automatically associated with the real account.
+10. AFTER account claiming, THE System SHALL allow the driver to view their guest booking history in their account's booking list.
+11. THE System SHALL expose `GET /api/v1/bookings/guest/:token` — an unauthenticated endpoint that returns booking details for a given `guest_token`.
+12. THE System SHALL expose `POST /api/v1/bookings/guest` — an unauthenticated endpoint that accepts guest booking details and creates a booking + payment intent in a single call.
+13. Hosts, admins, and users listing parking spots SHALL still require full Clerk authentication.
+14. THE System SHALL add `is_guest BOOLEAN NOT NULL DEFAULT FALSE` to the `users` table.
+15. THE System SHALL add `guest_token TEXT UNIQUE` to the `bookings` table.

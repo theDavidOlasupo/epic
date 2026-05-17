@@ -107,3 +107,64 @@ authRouter.post('/clerk-webhook', async (c) => {
 
   return c.json({ received: true });
 });
+
+// POST /api/v1/auth/claim-guest-account  (authenticated)
+// Links a guest booking to a newly created Clerk account
+authRouter.post('/claim-guest-account', authenticate, async (c) => {
+  const auth = c.get('auth');
+  const { guestToken } = await c.req.json<{ guestToken: string }>();
+
+  if (!guestToken) {
+    throw Errors.unprocessable('MISSING_GUEST_TOKEN', 'guestToken is required');
+  }
+
+  // Find the booking with this guest token
+  const bookingResult = await query<{ id: string; driver_id: string }>(
+    `SELECT id, driver_id FROM bookings WHERE guest_token = $1 LIMIT 1`,
+    [guestToken],
+  );
+  const booking = bookingResult.rows[0];
+  if (!booking) {
+    throw Errors.unprocessable('INVALID_GUEST_TOKEN', 'No booking found for this guest token');
+  }
+
+  // Find the guest user
+  const guestResult = await query<{ id: string; email: string }>(
+    `SELECT id, email FROM users WHERE id = $1 AND is_guest = TRUE LIMIT 1`,
+    [booking.driver_id],
+  );
+  const guestUser = guestResult.rows[0];
+  if (!guestUser) {
+    throw Errors.unprocessable('ALREADY_CLAIMED', 'This booking has already been claimed or is not a guest booking');
+  }
+
+  // Get the real user's email from our DB to verify it matches the guest email
+  const realUserResult = await query<{ email: string }>(
+    `SELECT email FROM users WHERE id = $1`,
+    [auth.userId],
+  );
+  const realUser = realUserResult.rows[0];
+
+  if (!realUser || realUser.email.toLowerCase() !== guestUser.email.toLowerCase()) {
+    throw Errors.forbidden('Email address does not match the guest booking');
+  }
+
+  // Claim: update the guest user row to use the real Clerk ID
+  await query(
+    `UPDATE users
+     SET clerk_user_id = $1, is_guest = FALSE, updated_at = NOW()
+     WHERE id = $2`,
+    [auth.clerkUserId, guestUser.id],
+  );
+
+  // If the real user already has a separate row (from auto-provisioning), merge by
+  // reassigning all bookings/vehicles from the guest row to the real user row,
+  // then delete the now-duplicate guest row.
+  if (auth.userId !== guestUser.id) {
+    await query(`UPDATE bookings SET driver_id = $1 WHERE driver_id = $2`, [auth.userId, guestUser.id]);
+    await query(`UPDATE vehicles SET user_id = $1 WHERE user_id = $2`, [auth.userId, guestUser.id]);
+    await query(`DELETE FROM users WHERE id = $1`, [guestUser.id]);
+  }
+
+  return c.json({ message: 'Account claimed successfully' });
+});
