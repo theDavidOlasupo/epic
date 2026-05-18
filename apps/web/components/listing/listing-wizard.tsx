@@ -5,11 +5,30 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { Button } from '@/components/ui/button';
 import { WhereInput } from '@/components/search/where-input';
+import { PhotoUploader } from './photo-uploader';
+import { AvailabilityEditor } from './availability-editor';
+import type { AvailabilityRule, AvailabilityBlock } from '@alpaca/types';
 
 const SPOT_TYPES = ['driveway', 'garage', 'lot', 'underground', 'other'] as const;
 const VEHICLE_SIZES = ['compact', 'mid_size', 'full_size', 'suv', 'truck', 'van'] as const;
 
-type Step = 'details' | 'location' | 'review';
+const SPOT_TYPE_LABELS: Record<string, string> = {
+  driveway: 'Driveway',
+  garage: 'Garage',
+  lot: 'Lot',
+  underground: 'Underground',
+  other: 'Other',
+};
+
+type Step = 'details' | 'location' | 'photos' | 'availability' | 'review';
+
+const STEPS: { key: Step; label: string }[] = [
+  { key: 'details', label: 'Details' },
+  { key: 'location', label: 'Location' },
+  { key: 'photos', label: 'Photos' },
+  { key: 'availability', label: 'Availability' },
+  { key: 'review', label: 'Review' },
+];
 
 interface FormData {
   title: string;
@@ -44,8 +63,20 @@ const EMPTY: FormData = {
 export function ListingWizard() {
   const router = useRouter();
   const { getToken } = useAuth();
+
   const [step, setStep] = useState<Step>('details');
   const [form, setForm] = useState<FormData>(EMPTY);
+
+  // spotId is set after the spot is created (on leaving the location step)
+  const [spotId, setSpotId] = useState<string | null>(null);
+
+  // Photos — list of confirmed S3 keys
+  const [photoKeys, setPhotoKeys] = useState<string[]>([]);
+
+  // Availability — rules and blocks added during the wizard
+  const [availabilityRules, setAvailabilityRules] = useState<AvailabilityRule[]>([]);
+  const [availabilityBlocks, setAvailabilityBlocks] = useState<AvailabilityBlock[]>([]);
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -53,7 +84,18 @@ export function ListingWizard() {
     setForm((f) => ({ ...f, ...patch }));
   }
 
-  async function handleSubmit() {
+  const currentStepIndex = STEPS.findIndex((s) => s.key === step);
+
+  // ── Step navigation helpers ──────────────────────────────────────────────
+
+  function goBack() {
+    const prev = STEPS[currentStepIndex - 1];
+    if (prev) setStep(prev.key);
+  }
+
+  // ── Create the spot (called when leaving Location step) ──────────────────
+
+  async function createSpot(): Promise<string | null> {
     setSaving(true);
     setError('');
     try {
@@ -85,49 +127,78 @@ export function ListingWizard() {
       if (!res.ok) {
         const err = await res.json() as { error: { message: string } };
         setError(err.error?.message ?? 'Failed to create listing');
-        return;
+        return null;
       }
 
-      // Auto-submit for review after creation
       const spot = await res.json() as { id: string };
-      await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/parking-spots/${spot.id}/submit-review`,
-        { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
-      );
-
-      router.push('/listings');
+      return spot.id;
     } finally {
       setSaving(false);
     }
   }
 
-  // ── Step indicators ──────────────────────────────────────────────────────
-  const steps: { key: Step; label: string }[] = [
-    { key: 'details', label: 'Details' },
-    { key: 'location', label: 'Location' },
-    { key: 'review', label: 'Review' },
-  ];
+  async function handleLocationNext() {
+    if (!form.address || !form.latitude) return;
+
+    // If we already created the spot (e.g. user went back), skip re-creation
+    if (spotId) {
+      setStep('photos');
+      return;
+    }
+
+    const id = await createSpot();
+    if (id) {
+      setSpotId(id);
+      setStep('photos');
+    }
+  }
+
+  // ── Final submit ─────────────────────────────────────────────────────────
+
+  async function handleSubmit() {
+    if (!spotId) return;
+    setSaving(true);
+    setError('');
+    try {
+      const token = await getToken();
+      await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/parking-spots/${spotId}/submit-review`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+      );
+      router.push('/listings');
+    } catch {
+      setError('Failed to submit listing for review');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Step indicator ───────────────────────────────────────────────────────
 
   return (
     <div>
       {/* Step indicator */}
-      <div className="mb-8 flex gap-2">
-        {steps.map((s, i) => (
-          <div key={s.key} className="flex items-center gap-2">
-            <div className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-medium ${
-              step === s.key ? 'bg-black text-white' : 'bg-gray-100 text-gray-500'
+      <div className="mb-8 flex items-center gap-1 overflow-x-auto">
+        {STEPS.map((s, i) => (
+          <div key={s.key} className="flex items-center gap-1 shrink-0">
+            <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium ${
+              step === s.key
+                ? 'bg-black text-white'
+                : currentStepIndex > i
+                ? 'bg-gray-800 text-white'
+                : 'bg-gray-100 text-gray-500'
             }`}>
-              {i + 1}
+              {currentStepIndex > i ? '✓' : i + 1}
             </div>
             <span className={`text-sm ${step === s.key ? 'font-medium text-gray-900' : 'text-gray-400'}`}>
               {s.label}
             </span>
-            {i < steps.length - 1 && <span className="text-gray-200 mx-1">→</span>}
+            {i < STEPS.length - 1 && <span className="text-gray-200 mx-1">→</span>}
           </div>
         ))}
       </div>
 
-      {/* Step 1: Details */}
+      {/* ── Step 1: Details ── */}
       {step === 'details' && (
         <div className="space-y-4">
           <div>
@@ -149,7 +220,7 @@ export function ListingWizard() {
                 onChange={(e) => update({ type: e.target.value })}
               >
                 {SPOT_TYPES.map((t) => (
-                  <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                  <option key={t} value={t}>{SPOT_TYPE_LABELS[t]}</option>
                 ))}
               </select>
             </div>
@@ -179,7 +250,7 @@ export function ListingWizard() {
           </div>
 
           <div>
-            <label className="text-sm font-medium text-gray-700">Rules (one per line)</label>
+            <label className="text-sm font-medium text-gray-700">Rules (one per line, optional)</label>
             <textarea
               rows={3}
               className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
@@ -199,7 +270,7 @@ export function ListingWizard() {
               >
                 <option value="">No restriction</option>
                 {VEHICLE_SIZES.map((s) => (
-                  <option key={s} value={s}>{s.replace('_', ' ')}</option>
+                  <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
                 ))}
               </select>
             </div>
@@ -237,14 +308,14 @@ export function ListingWizard() {
           <Button
             className="w-full"
             onClick={() => setStep('location')}
-            disabled={!form.title || !form.pricePerHour}
+            disabled={!form.title || !form.pricePerHour || !form.entryInstructions}
           >
             Next: Location →
           </Button>
         </div>
       )}
 
-      {/* Step 2: Location */}
+      {/* ── Step 2: Location ── */}
       {step === 'location' && (
         <div className="space-y-4">
           <div>
@@ -263,47 +334,82 @@ export function ListingWizard() {
             )}
           </div>
 
+          {error && <p className="text-sm text-red-500">{error}</p>}
+
           <div className="flex gap-3">
-            <Button variant="outline" onClick={() => setStep('details')}>← Back</Button>
+            <Button variant="outline" onClick={goBack}>← Back</Button>
             <Button
               className="flex-1"
-              onClick={() => setStep('review')}
-              disabled={!form.address || !form.latitude}
+              onClick={handleLocationNext}
+              disabled={!form.address || !form.latitude || saving}
             >
+              {saving ? 'Saving...' : 'Next: Photos →'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 3: Photos ── */}
+      {step === 'photos' && spotId && (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Upload photos of your parking spot. At least one photo is recommended.
+          </p>
+          <PhotoUploader
+            spotId={spotId}
+            confirmedKeys={photoKeys}
+            onKeysChange={setPhotoKeys}
+          />
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={goBack}>← Back</Button>
+            <Button className="flex-1" onClick={() => setStep('availability')}>
+              Next: Availability →
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 4: Availability ── */}
+      {step === 'availability' && spotId && (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Set your weekly schedule and block out any dates you're unavailable.
+          </p>
+          <AvailabilityEditor
+            spotId={spotId}
+            rules={availabilityRules}
+            blocks={availabilityBlocks}
+            onRulesChange={setAvailabilityRules}
+            onBlocksChange={setAvailabilityBlocks}
+          />
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={goBack}>← Back</Button>
+            <Button className="flex-1" onClick={() => setStep('review')}>
               Next: Review →
             </Button>
           </div>
         </div>
       )}
 
-      {/* Step 3: Review & Submit */}
+      {/* ── Step 5: Review & Submit ── */}
       {step === 'review' && (
         <div className="space-y-4">
           <div className="rounded-xl border border-gray-200 p-4 space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">Title</span>
-              <span className="font-medium">{form.title}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Type</span>
-              <span className="font-medium">{form.type}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Price</span>
-              <span className="font-medium">${Number(form.pricePerHour).toFixed(2)}/hr</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Address</span>
-              <span className="font-medium text-right max-w-[60%]">{form.address}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Covered</span>
-              <span className="font-medium">{form.isCovered ? 'Yes' : 'No'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Overnight</span>
-              <span className="font-medium">{form.allowOvernight ? 'Yes' : 'No'}</span>
-            </div>
+            <ReviewRow label="Title" value={form.title} />
+            <ReviewRow label="Type" value={SPOT_TYPE_LABELS[form.type] ?? form.type} />
+            <ReviewRow label="Price" value={`$${Number(form.pricePerHour).toFixed(2)}/hr`} />
+            <ReviewRow label="Address" value={form.address} />
+            <ReviewRow label="Covered" value={form.isCovered ? 'Yes' : 'No'} />
+            <ReviewRow label="Overnight" value={form.allowOvernight ? 'Yes' : 'No'} />
+            {form.maxVehicleSize && (
+              <ReviewRow label="Max vehicle" value={form.maxVehicleSize.replace(/_/g, ' ')} />
+            )}
+            {form.heightRestrictionCm && (
+              <ReviewRow label="Height limit" value={`${form.heightRestrictionCm} cm`} />
+            )}
+            <ReviewRow label="Photos" value={`${photoKeys.length} uploaded`} />
+            <ReviewRow label="Availability rules" value={`${availabilityRules.length} rule${availabilityRules.length !== 1 ? 's' : ''}`} />
+            <ReviewRow label="Blocked dates" value={`${availabilityBlocks.length} block${availabilityBlocks.length !== 1 ? 's' : ''}`} />
           </div>
 
           <div className="rounded-xl bg-yellow-50 p-3 text-sm text-yellow-800">
@@ -313,13 +419,22 @@ export function ListingWizard() {
           {error && <p className="text-sm text-red-500">{error}</p>}
 
           <div className="flex gap-3">
-            <Button variant="outline" onClick={() => setStep('location')}>← Back</Button>
+            <Button variant="outline" onClick={goBack}>← Back</Button>
             <Button className="flex-1" onClick={handleSubmit} disabled={saving}>
               {saving ? 'Submitting...' : 'Submit for Review'}
             </Button>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ReviewRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-gray-500">{label}</span>
+      <span className="font-medium text-right max-w-[60%]">{value}</span>
     </div>
   );
 }

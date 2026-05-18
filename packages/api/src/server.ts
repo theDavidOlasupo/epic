@@ -2,9 +2,12 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from 'dotenv';
 
-// Load .env from monorepo root regardless of where the process is started from
-const __dirname = dirname(fileURLToPath(import.meta.url));
-config({ path: resolve(__dirname, '../../../.env') });
+// In production (Railway) env vars are injected directly — dotenv is a no-op.
+// In local dev, load from .env at the monorepo root.
+if (process.env['NODE_ENV'] !== 'production') {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  config({ path: resolve(__dirname, '../../../.env') });
+}
 
 import { serve } from '@hono/node-server';
 import { app } from './app.js';

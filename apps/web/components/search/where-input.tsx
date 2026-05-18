@@ -35,7 +35,8 @@ export function WhereInput({ value, onChange, placeholder = 'Where are you going
 
     return () => {
       // Cleanup listener
-      window.google?.maps?.event?.clearInstanceListeners(autocomplete);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).google?.maps?.event?.clearInstanceListeners(autocomplete);
     };
   }, [places, onChange]);
 
