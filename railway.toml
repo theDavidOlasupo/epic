@@ -3,7 +3,7 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-preDeployCommand = "node --experimental-require-module packages/db/dist/migrate.js"
+preDeployCommand = "node packages/db/dist/migrate.js"
 startCommand = "node packages/api/dist/server.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
