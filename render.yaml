@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: alpaca-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: alpaca-db
+          property: connectionString
+      - key: CORS_ORIGIN
+        sync: false
+      - key: CLERK_STUB
+        value: false
+      - key: CLERK_JWKS_URL
+        sync: false
+      - key: CLERK_ISSUER
+        sync: false
+      - key: STRIPE_STUB
+        value: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: RESEND_API_KEY
+        sync: false
+
+databases:
+  - name: alpaca-db
+    databaseName: alpaca
+    postgresMajorVersion: 16

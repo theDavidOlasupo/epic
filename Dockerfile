@@ -1,18 +1,16 @@
 # ── Stage 1: Build ────────────────────────────────────────────────────────
 FROM node:22-alpine AS builder
 
-# Install pnpm
 RUN npm install -g pnpm@9
 
 WORKDIR /app
 
-# Copy workspace manifests first for better layer caching
+# Copy workspace manifests for layer caching
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/types/package.json ./packages/types/
 COPY packages/db/package.json ./packages/db/
 COPY packages/api/package.json ./packages/api/
 
-# Install all dependencies
 RUN pnpm install --frozen-lockfile
 
 # Copy source
@@ -33,20 +31,25 @@ RUN npm install -g pnpm@9
 
 WORKDIR /app
 
-# Copy workspace manifests
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/types/package.json ./packages/types/
 COPY packages/db/package.json ./packages/db/
 COPY packages/api/package.json ./packages/api/
 
-# Install production dependencies only
-RUN pnpm install --frozen-lockfile --prod
+# Install all deps (including devDeps for tsx which runs migrations)
+RUN pnpm install --frozen-lockfile
 
-# Copy built output from builder
+# Copy built API and types output
 COPY --from=builder /app/packages/types/dist ./packages/types/dist
-COPY --from=builder /app/packages/db/dist ./packages/db/dist
 COPY --from=builder /app/packages/api/dist ./packages/api/dist
+
+# Copy DB source (tsx runs migrations directly from .ts files)
+COPY packages/db/src ./packages/db/src
+COPY packages/db/tsconfig.json ./packages/db/
+
+COPY tsconfig.base.json ./
 
 EXPOSE 4000
 
-CMD ["node", "packages/api/dist/server.js"]
+# Run migrations via tsx then start the API
+CMD ["sh", "-c", "node --import tsx/esm packages/db/src/migrate.ts up && node packages/api/dist/server.js"]
