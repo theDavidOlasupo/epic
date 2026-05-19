@@ -1,5 +1,5 @@
 # ── Stage 1: Build ────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 # Install pnpm
 RUN npm install -g pnpm@9
@@ -27,7 +27,7 @@ RUN pnpm --filter @alpaca/db build
 RUN pnpm --filter @alpaca/api build
 
 # ── Stage 2: Production image ──────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 RUN npm install -g pnpm@9
 
