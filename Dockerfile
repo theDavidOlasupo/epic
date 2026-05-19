@@ -47,9 +47,6 @@ COPY --from=builder /app/packages/types/dist ./packages/types/dist
 COPY --from=builder /app/packages/db/dist ./packages/db/dist
 COPY --from=builder /app/packages/api/dist ./packages/api/dist
 
-# Copy DB migrations (needed at runtime for migrate command)
-COPY packages/db/src/migrations ./packages/db/src/migrations
-
 EXPOSE 4000
 
 CMD ["node", "packages/api/dist/server.js"]
