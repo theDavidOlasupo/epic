@@ -3,10 +3,17 @@ import { z } from 'zod';
 import { authenticate, requireRole } from '../middleware/authenticate.js';
 import { query } from '@alpaca/db';
 import { Errors } from '../lib/errors.js';
+import { getUploadUrl } from '../lib/r2.js';
 import type { ParkingSpot, ParkingSearchResult } from '@alpaca/types';
 import type { AppEnv } from '../lib/hono-types.js';
 
 export const parkingSpotsRouter = new Hono<AppEnv>();
+
+/** Ownership check — admins bypass */
+function assertOwner(auth: { userId: string; role: string }, hostId: string) {
+  if (auth.role === 'admin') return;
+  if (hostId !== auth.userId) throw Errors.forbidden();
+}
 
 const spotTypes = ['driveway', 'garage', 'lot', 'underground', 'other'] as const;
 const vehicleSizes = ['compact', 'mid_size', 'full_size', 'suv', 'truck', 'van'] as const;
@@ -221,7 +228,7 @@ parkingSpotsRouter.post(
 parkingSpotsRouter.put(
   '/:id',
   authenticate,
-  requireRole('host'),
+  requireRole('host', 'admin'),
   async (c) => {
     const auth = c.get('auth');
     const { id } = c.req.param();
@@ -233,7 +240,7 @@ parkingSpotsRouter.put(
     );
     const spot = existing.rows[0];
     if (!spot) throw Errors.notFound('ParkingSpot');
-    if (spot.host_id !== auth.userId) throw Errors.forbidden();
+    assertOwner(auth, spot.host_id);
     if (!['draft', 'rejected'].includes(spot.status)) {
       throw Errors.unprocessable('LISTING_NOT_EDITABLE', 'Listing cannot be edited in its current status');
     }
@@ -289,7 +296,7 @@ parkingSpotsRouter.post('/:id/submit-review', authenticate, requireRole('host', 
   );
   const spot = existing.rows[0];
   if (!spot) throw Errors.notFound('ParkingSpot');
-  if (spot.host_id !== auth.userId) throw Errors.forbidden();
+  assertOwner(auth, spot.host_id);
   if (!['draft', 'rejected'].includes(spot.status)) {
     throw Errors.unprocessable('LISTING_NOT_EDITABLE', 'Listing cannot be submitted in its current status');
   }
@@ -304,7 +311,7 @@ parkingSpotsRouter.post('/:id/submit-review', authenticate, requireRole('host', 
 });
 
 // POST /api/v1/parking-spots/:id/pause
-parkingSpotsRouter.post('/:id/pause', authenticate, requireRole('host'), async (c) => {
+parkingSpotsRouter.post('/:id/pause', authenticate, requireRole('host', 'admin'), async (c) => {
   const auth = c.get('auth');
   const { id } = c.req.param();
 
@@ -314,7 +321,7 @@ parkingSpotsRouter.post('/:id/pause', authenticate, requireRole('host'), async (
   );
   const spot = existing.rows[0];
   if (!spot) throw Errors.notFound('ParkingSpot');
-  if (spot.host_id !== auth.userId) throw Errors.forbidden();
+  assertOwner(auth, spot.host_id);
   if (spot.status !== 'active') {
     throw Errors.unprocessable('LISTING_NOT_EDITABLE', 'Only active listings can be paused');
   }
@@ -332,7 +339,7 @@ parkingSpotsRouter.post('/:id/pause', authenticate, requireRole('host'), async (
 parkingSpotsRouter.post(
   '/:id/photos/upload-url',
   authenticate,
-  requireRole('host'),
+  requireRole('host', 'admin'),
   async (c) => {
     const auth = c.get('auth');
     const { id } = c.req.param();
@@ -343,13 +350,11 @@ parkingSpotsRouter.post(
       [id],
     );
     if (!existing.rows[0]) throw Errors.notFound('ParkingSpot');
-    if (existing.rows[0].host_id !== auth.userId) throw Errors.forbidden();
+    assertOwner(auth, existing.rows[0].host_id);
 
     const key = `spots/${id}/${Date.now()}-${filename}`;
 
-    // TODO: generate real S3 pre-signed URL (stub: return a local placeholder)
-    const uploadUrl = `http://localhost:9000/alpaca-photos/${key}?stub=true`;
-    console.log(`[S3 STUB] Pre-signed URL for key: ${key}`);
+    const uploadUrl = await getUploadUrl(key, contentType);
 
     return c.json({ uploadUrl, key });
   },
@@ -359,7 +364,7 @@ parkingSpotsRouter.post(
 parkingSpotsRouter.post(
   '/:id/photos/confirm',
   authenticate,
-  requireRole('host'),
+  requireRole('host', 'admin'),
   async (c) => {
     const auth = c.get('auth');
     const { id } = c.req.param();
@@ -370,7 +375,7 @@ parkingSpotsRouter.post(
       [id],
     );
     if (!existing.rows[0]) throw Errors.notFound('ParkingSpot');
-    if (existing.rows[0].host_id !== auth.userId) throw Errors.forbidden();
+    assertOwner(auth, existing.rows[0].host_id);
 
     await query(
       `UPDATE parking_spots SET photos = array_append(photos, $1), updated_at = NOW()
@@ -387,7 +392,7 @@ parkingSpotsRouter.post(
 parkingSpotsRouter.post(
   '/:id/availability-rules',
   authenticate,
-  requireRole('host'),
+  requireRole('host', 'admin'),
   async (c) => {
     const auth = c.get('auth');
     const { id } = c.req.param();
@@ -398,7 +403,7 @@ parkingSpotsRouter.post(
       [id],
     );
     if (!existing.rows[0]) throw Errors.notFound('ParkingSpot');
-    if (existing.rows[0].host_id !== auth.userId) throw Errors.forbidden();
+    assertOwner(auth, existing.rows[0].host_id);
 
     const result = await query(
       `INSERT INTO availability_rules (parking_spot_id, day_of_week, start_time, end_time, timezone)
@@ -415,7 +420,7 @@ parkingSpotsRouter.post(
 parkingSpotsRouter.delete(
   '/:id/availability-rules/:ruleId',
   authenticate,
-  requireRole('host'),
+  requireRole('host', 'admin'),
   async (c) => {
     const auth = c.get('auth');
     const { id, ruleId } = c.req.param();
@@ -425,7 +430,7 @@ parkingSpotsRouter.delete(
       [id],
     );
     if (!existing.rows[0]) throw Errors.notFound('ParkingSpot');
-    if (existing.rows[0].host_id !== auth.userId) throw Errors.forbidden();
+    assertOwner(auth, existing.rows[0].host_id);
 
     await query(
       `DELETE FROM availability_rules WHERE id = $1 AND parking_spot_id = $2`,
@@ -441,7 +446,7 @@ parkingSpotsRouter.delete(
 parkingSpotsRouter.post(
   '/:id/availability-blocks',
   authenticate,
-  requireRole('host'),
+  requireRole('host', 'admin'),
   async (c) => {
     const auth = c.get('auth');
     const { id } = c.req.param();
@@ -452,7 +457,7 @@ parkingSpotsRouter.post(
       [id],
     );
     if (!existing.rows[0]) throw Errors.notFound('ParkingSpot');
-    if (existing.rows[0].host_id !== auth.userId) throw Errors.forbidden();
+    assertOwner(auth, existing.rows[0].host_id);
 
     // Check for conflict with confirmed bookings
     const conflict = await query(
@@ -484,7 +489,7 @@ parkingSpotsRouter.post(
 parkingSpotsRouter.delete(
   '/:id/availability-blocks/:blockId',
   authenticate,
-  requireRole('host'),
+  requireRole('host', 'admin'),
   async (c) => {
     const auth = c.get('auth');
     const { id, blockId } = c.req.param();
@@ -494,7 +499,7 @@ parkingSpotsRouter.delete(
       [id],
     );
     if (!existing.rows[0]) throw Errors.notFound('ParkingSpot');
-    if (existing.rows[0].host_id !== auth.userId) throw Errors.forbidden();
+    assertOwner(auth, existing.rows[0].host_id);
 
     await query(
       `DELETE FROM availability_blocks WHERE id = $1 AND parking_spot_id = $2`,
