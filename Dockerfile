@@ -10,10 +10,11 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/types/package.json ./packages/types/
 COPY packages/db/package.json ./packages/db/
 COPY packages/api/package.json ./packages/api/
+COPY apps/web/package.json ./apps/web/
 
 RUN pnpm install --frozen-lockfile
 
-# Copy source
+# Copy source (only what we need to build the API)
 COPY packages/types ./packages/types
 COPY packages/db ./packages/db
 COPY packages/api ./packages/api
@@ -35,6 +36,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/types/package.json ./packages/types/
 COPY packages/db/package.json ./packages/db/
 COPY packages/api/package.json ./packages/api/
+COPY apps/web/package.json ./apps/web/
 
 # Install all deps (including devDeps for tsx which runs migrations)
 RUN pnpm install --frozen-lockfile
@@ -46,10 +48,9 @@ COPY --from=builder /app/packages/api/dist ./packages/api/dist
 # Copy DB source (tsx runs migrations directly from .ts files)
 COPY packages/db/src ./packages/db/src
 COPY packages/db/tsconfig.json ./packages/db/
-
 COPY tsconfig.base.json ./
 
 EXPOSE 4000
 
-# Run migrations via tsx then start the API
+# Run migrations then start the API
 CMD ["sh", "-c", "node --import tsx/esm packages/db/src/migrate.ts up && node packages/api/dist/server.js"]
