@@ -38,15 +38,14 @@ COPY packages/db/package.json ./packages/db/
 COPY packages/api/package.json ./packages/api/
 COPY apps/web/package.json ./apps/web/
 
-# Install all deps (including tsx for migrations)
+# Install all deps (tsx is needed for migrations)
 RUN pnpm install --frozen-lockfile
 
 # Copy built output
 COPY --from=builder /app/packages/types/dist ./packages/types/dist
-COPY --from=builder /app/packages/db/dist ./packages/db/dist
 COPY --from=builder /app/packages/api/dist ./packages/api/dist
 
-# Copy migration source files (node-pg-migrate needs them)
+# Copy DB migration source files (tsx runs .ts directly)
 COPY packages/db/src/migrations ./packages/db/src/migrations
 COPY packages/db/src/migrate.ts ./packages/db/src/migrate.ts
 COPY packages/db/tsconfig.json ./packages/db/
@@ -54,6 +53,5 @@ COPY tsconfig.base.json ./
 
 EXPOSE 4000
 
-# Run migrations from packages/db dir (so tsx resolves from its node_modules)
-# then start the API
-CMD ["sh", "-c", "cd packages/db && pnpm exec tsx src/migrate.ts up && cd /app && node packages/api/dist/server.js"]
+# Use sh -c so cd works; run migrations from packages/db then start API
+CMD ["sh", "-c", "cd /app/packages/db && node --import tsx/esm src/migrate.ts up && cd /app && node packages/api/dist/server.js"]
