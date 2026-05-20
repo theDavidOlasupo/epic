@@ -43,6 +43,7 @@ RUN pnpm install --frozen-lockfile
 
 # Copy built output
 COPY --from=builder /app/packages/types/dist ./packages/types/dist
+COPY --from=builder /app/packages/db/dist ./packages/db/dist
 COPY --from=builder /app/packages/api/dist ./packages/api/dist
 
 # Copy DB migration source files (tsx runs .ts directly)
