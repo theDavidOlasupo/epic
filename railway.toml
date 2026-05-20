@@ -3,7 +3,7 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "node --import tsx/esm packages/db/src/migrate.ts up && node packages/api/dist/server.js"
+startCommand = "cd packages/db && pnpm exec tsx src/migrate.ts up && cd /app && node packages/api/dist/server.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"

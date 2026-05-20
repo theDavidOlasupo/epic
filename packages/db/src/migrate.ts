@@ -11,4 +11,6 @@ await runner({
   dir: resolve(__dirname, 'migrations'),
   direction,
   verbose: true,
+  ignorePattern: '.*\\.(d\\.ts|js|map)$',
+
 });
