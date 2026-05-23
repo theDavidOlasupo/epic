@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Geist } from 'next/font/google';
 import { ClerkProvider } from '@clerk/nextjs';
 import { MapsProvider } from '@/components/maps-provider';
+import { FeedbackWidget } from '@/components/feedback/feedback-widget';
 import './globals.css';
 
 const geist = Geist({
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <html lang="en" className={geist.variable}>
         <body>
           <MapsProvider>{children}</MapsProvider>
+          <FeedbackWidget />
         </body>
       </html>
     </ClerkProvider>

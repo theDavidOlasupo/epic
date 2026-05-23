@@ -23,7 +23,7 @@ function getClient(): S3Client {
   return _client;
 }
 
-const BUCKET = () => process.env['R2_BUCKET_NAME'] ?? 'alpaca-photos';
+const BUCKET = () => process.env['R2_BUCKET_NAME'] ?? 'alpaca';
 const PUBLIC_URL = () => process.env['R2_PUBLIC_URL'] ?? '';
 
 /**
