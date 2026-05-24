@@ -88,6 +88,15 @@ export interface ListingRejectedPayload {
   reason: string;
 }
 
+export interface ListingPendingReviewPayload {
+  type: 'listing_pending_review';
+  to: string;
+  hostName: string;
+  spotTitle: string;
+  spotAddress: string;
+  spotId: string;
+}
+
 export type EmailPayload =
   | BookingConfirmedDriverPayload
   | BookingConfirmedHostPayload
@@ -95,4 +104,5 @@ export type EmailPayload =
   | BookingCancelledDriverPayload
   | BookingCancelledHostPayload
   | ListingApprovedPayload
-  | ListingRejectedPayload;
+  | ListingRejectedPayload
+  | ListingPendingReviewPayload;

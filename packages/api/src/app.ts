@@ -17,10 +17,19 @@ export const app = new Hono<AppEnv>();
 
 // ── Global middleware ──────────────────────────────────────────────────────
 app.use('*', logger());
+
+const allowedOrigins = (process.env['CORS_ORIGIN'] ?? 'http://localhost:3000')
+  .split(',')
+  .map((o) => o.trim());
+
 app.use(
   '*',
   cors({
-    origin: process.env['CORS_ORIGIN'] ?? 'http://localhost:3000',
+    origin: (origin) => {
+      if (!origin) return allowedOrigins[0]!;
+      if (allowedOrigins.includes(origin)) return origin;
+      return allowedOrigins[0]!;
+    },
     allowHeaders: ['Content-Type', 'Authorization'],
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   }),

@@ -4,6 +4,7 @@ import { authenticate, requireRole } from '../middleware/authenticate.js';
 import { query } from '@alpaca/db';
 import { Errors } from '../lib/errors.js';
 import { getUploadUrl } from '../lib/r2.js';
+import { enqueueEmail } from '../lib/queue.js';
 import type { ParkingSpot, ParkingSearchResult } from '@alpaca/types';
 import type { AppEnv } from '../lib/hono-types.js';
 
@@ -307,6 +308,10 @@ parkingSpotsRouter.post('/:id/submit-review', authenticate, requireRole('host', 
      RETURNING id, status, updated_at AS "updatedAt"`,
     [id],
   );
+
+  // Notify admin(s) about the new pending listing
+  await enqueueEmail('listing_pending_review', { spotId: id, hostId: spot.host_id });
+
   return c.json(result.rows[0]);
 });
 

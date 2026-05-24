@@ -143,5 +143,20 @@ export function buildEmailMessage(payload: EmailPayload): EmailMessage {
       `);
       return { to: payload.to, subject, html };
     }
+
+    case 'listing_pending_review': {
+      const subject = `New listing pending review — ${payload.spotTitle}`;
+      const html = layout(subject, `
+        <h2>New listing needs review 📋</h2>
+        <p>A host has submitted a new listing for approval.</p>
+        <table style="width:100%;border-collapse:collapse;margin:16px 0">
+          <tr><td style="padding:8px;border-bottom:1px solid #eee;color:#666">Title</td><td style="padding:8px;border-bottom:1px solid #eee"><strong>${payload.spotTitle}</strong></td></tr>
+          <tr><td style="padding:8px;border-bottom:1px solid #eee;color:#666">Host</td><td style="padding:8px;border-bottom:1px solid #eee">${payload.hostName}</td></tr>
+          <tr><td style="padding:8px;color:#666">Address</td><td style="padding:8px">${payload.spotAddress}</td></tr>
+        </table>
+        <p>Log in to the admin dashboard to review and approve or reject this listing.</p>
+      `);
+      return { to: payload.to, subject, html };
+    }
   }
 }

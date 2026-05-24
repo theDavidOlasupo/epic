@@ -32,7 +32,7 @@ export async function enqueueEmail(
   payload: Record<string, unknown>,
 ): Promise<void> {
   try {
-    if (type === 'listing_approved' || type === 'listing_rejected') {
+    if (type === 'listing_approved' || type === 'listing_rejected' || type === 'listing_pending_review') {
       await dispatchListingEmail(type, payload);
     } else {
       await dispatchEmail(type, payload);
@@ -203,6 +203,21 @@ async function dispatchListingEmail(type: string, payload: Record<string, unknow
       hostName: data.host_name,
       spotTitle: data.spot_title,
       reason: (payload['reason'] as string) ?? '',
+    });
+  } else if (type === 'listing_pending_review') {
+    // Notify admin — send to configured admin email or fall back to a default
+    const adminEmail = process.env['ADMIN_NOTIFICATION_EMAIL'] ?? data.host_email;
+    const spotResult = await query<{ address: string }>(
+      `SELECT address FROM parking_spots WHERE id = $1`,
+      [spotId],
+    );
+    await sendEmail({
+      type: 'listing_pending_review',
+      to: adminEmail,
+      hostName: data.host_name,
+      spotTitle: data.spot_title,
+      spotAddress: spotResult.rows[0]?.address ?? '',
+      spotId: spotId!,
     });
   }
 }
