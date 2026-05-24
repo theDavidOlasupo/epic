@@ -27,7 +27,7 @@ export function FeedbackWidget() {
           message: message.trim(),
           email: email || (user?.primaryEmailAddress?.emailAddress ?? undefined),
           pageUrl: window.location.href,
-          userId: undefined, // anonymous submission
+          userId: undefined,
         }),
       });
 
