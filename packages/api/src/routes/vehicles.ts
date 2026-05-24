@@ -24,7 +24,7 @@ const createVehicleSchema = z.object({
 });
 
 // GET /api/v1/users/me/vehicles
-vehiclesRouter.get('/', authenticate, requireRole('driver', 'admin'), async (c) => {
+vehiclesRouter.get('/', authenticate, requireRole('driver', 'host', 'admin'), async (c) => {
   const auth = c.get('auth');
   const result = await query<Vehicle>(
     `SELECT id, user_id as "userId", make, model, year,
@@ -38,7 +38,7 @@ vehiclesRouter.get('/', authenticate, requireRole('driver', 'admin'), async (c) 
 });
 
 // POST /api/v1/users/me/vehicles
-vehiclesRouter.post('/', authenticate, requireRole('driver', 'admin'), async (c) => {
+vehiclesRouter.post('/', authenticate, requireRole('driver', 'host', 'admin'), async (c) => {
   const auth = c.get('auth');
   const body = createVehicleSchema.parse(await c.req.json());
 
@@ -76,7 +76,7 @@ vehiclesRouter.post('/', authenticate, requireRole('driver', 'admin'), async (c)
 });
 
 // DELETE /api/v1/users/me/vehicles/:vehicleId
-vehiclesRouter.delete('/:vehicleId', authenticate, requireRole('driver', 'admin'), async (c) => {
+vehiclesRouter.delete('/:vehicleId', authenticate, requireRole('driver', 'host', 'admin'), async (c) => {
   const auth = c.get('auth');
   const { vehicleId } = c.req.param();
 

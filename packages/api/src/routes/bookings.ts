@@ -22,7 +22,7 @@ const cancelBookingSchema = z.object({
 });
 
 // POST /api/v1/bookings
-bookingsRouter.post('/', authenticate, requireRole('driver', 'admin'), async (c) => {
+bookingsRouter.post('/', authenticate, requireRole('driver', 'host', 'admin'), async (c) => {
   const auth = c.get('auth');
   const body = createBookingSchema.parse(await c.req.json());
 
@@ -101,7 +101,7 @@ bookingsRouter.post('/', authenticate, requireRole('driver', 'admin'), async (c)
 });
 
 // GET /api/v1/bookings/me  (driver's own bookings) — MUST be before /:id
-bookingsRouter.get('/me', authenticate, requireRole('driver', 'admin'), async (c) => {
+bookingsRouter.get('/me', authenticate, requireRole('driver', 'host', 'admin'), async (c) => {
   const auth = c.get('auth');
   const filter = c.req.query('filter');
 
@@ -168,7 +168,7 @@ bookingsRouter.get('/:id', authenticate, async (c) => {
 });
 
 // POST /api/v1/bookings/:id/checkout-lock
-bookingsRouter.post('/:id/checkout-lock', authenticate, requireRole('driver', 'admin'), async (c) => {
+bookingsRouter.post('/:id/checkout-lock', authenticate, requireRole('driver', 'host', 'admin'), async (c) => {
   const auth = c.get('auth');
   const { id } = c.req.param();
 

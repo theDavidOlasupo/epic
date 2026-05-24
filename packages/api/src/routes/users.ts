@@ -49,6 +49,27 @@ usersRouter.put('/me', authenticate, async (c) => {
   return c.json(user);
 });
 
+// POST /api/v1/users/me/become-host
+usersRouter.post('/me/become-host', authenticate, async (c) => {
+  const auth = c.get('auth');
+
+  if (auth.role === 'host' || auth.role === 'admin') {
+    return c.json({ message: 'Already a host' });
+  }
+
+  const result = await query<User>(
+    `UPDATE users SET role = 'host', updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, email, name, phone_number as "phoneNumber", role, status,
+               email_verified as "emailVerified", phone_verified as "phoneVerified",
+               created_at as "createdAt", updated_at as "updatedAt"`,
+    [auth.userId],
+  );
+  const user = result.rows[0];
+  if (!user) throw Errors.notFound('User');
+  return c.json(user);
+});
+
 const updateStatusSchema = z.object({
   status: z.enum(['active', 'suspended', 'banned']),
 });

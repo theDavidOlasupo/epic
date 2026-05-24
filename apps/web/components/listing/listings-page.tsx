@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth, useUser } from '@clerk/nextjs';
 import Link from 'next/link';
 import type { ParkingSpot, ListingStatus } from '@alpaca/types';
 
@@ -23,9 +23,12 @@ const STATUS_LABELS: Record<ListingStatus, string> = {
 
 export function ListingsPage() {
   const { getToken } = useAuth();
+  const { user } = useUser();
   const [spots, setSpots] = useState<ParkingSpot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [upgrading, setUpgrading] = useState(false);
+  const [isHost, setIsHost] = useState(true); // assume host until proven otherwise
 
   const fetchSpots = useCallback(async () => {
     try {
@@ -34,12 +37,18 @@ export function ListingsPage() {
         `${process.env.NEXT_PUBLIC_API_URL}/api/v1/parking-spots/mine`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
+      if (res.status === 403) {
+        // User is a driver, not a host yet
+        setIsHost(false);
+        return;
+      }
       if (!res.ok) {
         const err = await res.json() as { error: { message: string } };
         setError(err.error?.message ?? 'Failed to load listings');
         return;
       }
       setSpots(await res.json() as ParkingSpot[]);
+      setIsHost(true);
     } catch {
       setError('Failed to load listings');
     } finally {
@@ -49,7 +58,45 @@ export function ListingsPage() {
 
   useEffect(() => { void fetchSpots(); }, [fetchSpots]);
 
+  async function handleBecomeHost() {
+    setUpgrading(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/users/me/become-host`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (res.ok) {
+        setIsHost(true);
+        void fetchSpots();
+      }
+    } finally {
+      setUpgrading(false);
+    }
+  }
+
   if (loading) return <p className="text-gray-400">Loading listings...</p>;
+
+  // Show "Become a host" prompt for drivers
+  if (!isHost) {
+    return (
+      <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center">
+        <span className="text-4xl">🏠</span>
+        <p className="mt-4 text-lg font-medium text-gray-900">Earn money with your parking spot</p>
+        <p className="mt-2 text-sm text-gray-500 max-w-sm mx-auto">
+          List your driveway, garage, or parking space and earn money when drivers book it.
+        </p>
+        <button
+          onClick={handleBecomeHost}
+          disabled={upgrading}
+          className="mt-6 inline-block rounded-full bg-black px-6 py-3 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+        >
+          {upgrading ? 'Setting up...' : 'Become a host'}
+        </button>
+      </div>
+    );
+  }
+
   if (error) return <p className="text-red-500">{error}</p>;
 
   if (spots.length === 0) {
