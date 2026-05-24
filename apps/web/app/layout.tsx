@@ -3,6 +3,7 @@ import { Geist } from 'next/font/google';
 import { ClerkProvider } from '@clerk/nextjs';
 import { MapsProvider } from '@/components/maps-provider';
 import { FeedbackWidget } from '@/components/feedback/feedback-widget';
+import { Navbar } from '@/components/navbar';
 import './globals.css';
 
 const geist = Geist({
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <ClerkProvider>
       <html lang="en" className={geist.variable}>
         <body>
+          <Navbar />
           <MapsProvider>{children}</MapsProvider>
           <FeedbackWidget />
         </body>
