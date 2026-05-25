@@ -53,19 +53,19 @@ export function FeedbackWidget() {
 
   return (
     <>
-      {/* Floating button */}
+      {/* Floating button — small round icon on mobile (positioned higher), full pill on desktop */}
       <button
         onClick={() => setOpen(!open)}
-        className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-black px-4 py-3 text-white shadow-lg hover:bg-gray-800 transition-transform hover:scale-105"
+        className="fixed bottom-20 right-4 sm:bottom-5 sm:right-5 z-50 flex items-center justify-center gap-2 rounded-full bg-black text-white shadow-lg hover:bg-gray-800 transition-transform hover:scale-105 h-10 w-10 sm:h-auto sm:w-auto sm:px-4 sm:py-3"
         aria-label="Send feedback"
       >
         <span>💬</span>
-        <span className="text-sm font-medium">Feedback</span>
+        <span className="hidden sm:inline text-sm font-medium">Feedback</span>
       </button>
 
       {/* Popup */}
       {open && (
-        <div className="fixed bottom-20 right-5 z-50 w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-xl">
+        <div className="fixed bottom-32 right-4 sm:bottom-20 sm:right-5 z-50 w-[calc(100%-2rem)] sm:w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-xl">
           {submitted ? (
             <div className="text-center py-6">
               <span className="text-3xl">✓</span>
