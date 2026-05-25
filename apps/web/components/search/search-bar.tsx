@@ -44,14 +44,14 @@ export function SearchBar({ initialParams, onSearch, compact = false }: SearchBa
   }
 
   return (
-    <div className={`flex items-stretch rounded-full border border-gray-200 bg-white shadow-md ${compact ? 'text-sm' : ''}`}>
+    <div className={`flex flex-col sm:flex-row sm:items-stretch rounded-2xl sm:rounded-full border border-gray-200 bg-white shadow-md ${compact ? 'text-sm' : ''}`}>
       {/* Where */}
-      <div className="flex-1 min-w-0 border-r border-gray-200">
+      <div className="flex-1 min-w-0 border-b sm:border-b-0 sm:border-r border-gray-200">
         <WhereInput value={address} onChange={handlePlaceChange} />
       </div>
 
       {/* When */}
-      <div className="flex-1 min-w-0 border-r border-gray-200">
+      <div className="flex-1 min-w-0 border-b sm:border-b-0 sm:border-r border-gray-200">
         <WhenPicker
           startTime={startTime}
           endTime={endTime}
@@ -60,15 +60,15 @@ export function SearchBar({ initialParams, onSearch, compact = false }: SearchBa
       </div>
 
       {/* Search button */}
-      <div className="flex items-center pr-2 pl-1">
+      <div className="flex items-center p-2 sm:pr-2 sm:pl-1">
         <Button
           onClick={handleSearch}
           disabled={!lat || !startTime || !endTime}
-          className="rounded-full"
+          className="w-full sm:w-auto rounded-full"
           size={compact ? 'sm' : 'default'}
         >
           <Search className="h-4 w-4" />
-          {!compact && <span className="ml-1">Search</span>}
+          <span className="ml-1">Search</span>
         </Button>
       </div>
     </div>

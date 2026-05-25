@@ -1,8 +1,6 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import Link from 'next/link';
-import { UserButton } from '@clerk/nextjs';
 import { SearchBar, type SearchParams } from '@/components/search/search-bar';
 import { MapView } from '@/components/search/map-view';
 import { SpotCard } from '@/components/search/spot-card';
@@ -43,21 +41,12 @@ export default function SearchPage() {
     <div className="flex h-screen flex-col">
       {/* Top search bar */}
       <header className="z-10 border-b border-gray-200 bg-white px-4 py-3 shadow-sm">
-        <div className="mx-auto flex max-w-3xl items-center gap-3">
-          <div className="flex-1">
-            <SearchBar
-              initialParams={searchParams ?? undefined}
-              onSearch={handleSearch}
-              compact
-            />
-          </div>
-          <Link
-            href="/bookings"
-            className="shrink-0 rounded-full border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            My Bookings
-          </Link>
-          <UserButton />
+        <div className="mx-auto max-w-3xl">
+          <SearchBar
+            initialParams={searchParams ?? undefined}
+            onSearch={handleSearch}
+            compact
+          />
         </div>
       </header>
 

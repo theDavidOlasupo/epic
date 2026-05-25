@@ -70,3 +70,12 @@
     text-decoration: none;
   }
 }
+
+/* Google Places autocomplete dropdown — ensure visibility on mobile portrait */
+@media (max-width: 640px) {
+  .pac-container {
+    width: calc(100vw - 32px) !important;
+    left: 16px !important;
+    right: 16px !important;
+  }
+}
