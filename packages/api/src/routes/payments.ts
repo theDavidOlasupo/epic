@@ -18,7 +18,7 @@ const createIntentSchema = z.object({
 });
 
 // POST /api/v1/payments/create-intent
-paymentsRouter.post('/create-intent', authenticate, requireRole('driver', 'admin'), async (c) => {
+paymentsRouter.post('/create-intent', authenticate, requireRole('driver', 'host', 'admin'), async (c) => {
   const auth = c.get('auth');
   const { bookingId } = createIntentSchema.parse(await c.req.json());
 

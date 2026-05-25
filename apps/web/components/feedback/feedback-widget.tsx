@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 
 export function FeedbackWidget() {
@@ -13,6 +13,45 @@ export function FeedbackWidget() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
+
+  // Drag state
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const hasMoved = useRef(false);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: position.x,
+      origY: position.y,
+    };
+    hasMoved.current = false;
+    setDragging(true);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, [position]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) hasMoved.current = true;
+    setPosition({
+      x: dragRef.current.origX + dx,
+      y: dragRef.current.origY + dy,
+    });
+  }, []);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    dragRef.current = null;
+    setDragging(false);
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    // Only toggle open if it wasn't a drag
+    if (!hasMoved.current) {
+      setOpen((o) => !o);
+    }
+  }, []);
 
   async function handleSubmit() {
     if (!message.trim()) return;
@@ -51,21 +90,36 @@ export function FeedbackWidget() {
     }
   }
 
+  const buttonStyle = {
+    transform: `translate(${position.x}px, ${position.y}px)`,
+    cursor: dragging ? 'grabbing' : 'grab',
+  };
+
+  const popupStyle = {
+    transform: `translate(${position.x}px, ${position.y}px)`,
+  };
+
   return (
     <>
-      {/* Floating button — small round icon on mobile (positioned higher), full pill on desktop */}
-      <button
-        onClick={() => setOpen(!open)}
-        className="fixed bottom-20 right-4 sm:bottom-5 sm:right-5 z-50 flex items-center justify-center gap-2 rounded-full bg-black text-white shadow-lg hover:bg-gray-800 transition-transform hover:scale-105 h-10 w-10 sm:h-auto sm:w-auto sm:px-4 sm:py-3"
+      {/* Draggable floating button */}
+      <div
+        className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-black px-4 py-3 text-white shadow-lg select-none touch-none"
+        style={buttonStyle}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
         aria-label="Send feedback"
       >
         <span>💬</span>
-        <span className="hidden sm:inline text-sm font-medium">Feedback</span>
-      </button>
+        <span className="text-sm font-medium">Feedback</span>
+      </div>
 
-      {/* Popup */}
+      {/* Popup — positioned relative to the button */}
       {open && (
-        <div className="fixed bottom-32 right-4 sm:bottom-20 sm:right-5 z-50 w-[calc(100%-2rem)] sm:w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-xl">
+        <div
+          className="fixed bottom-[4.5rem] right-5 z-50 w-[calc(100%-2rem)] max-w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-xl"
+          style={popupStyle}
+        >
           {submitted ? (
             <div className="text-center py-6">
               <span className="text-3xl">✓</span>
