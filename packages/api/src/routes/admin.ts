@@ -14,6 +14,32 @@ const updateStatusSchema = z.object({ status: z.enum(['active', 'suspended', 'ba
 
 // ── Listings ───────────────────────────────────────────────────────────────
 
+// GET /api/v1/admin/listings — all listings with optional status filter
+adminRouter.get('/listings', authenticate, requireRole('admin'), async (c) => {
+  const page = Number(c.req.query('page') ?? 1);
+  const limit = Math.min(Number(c.req.query('limit') ?? 50), 100);
+  const offset = (page - 1) * limit;
+  const status = c.req.query('status') ?? null;
+
+  const result = await query<ParkingSpot>(
+    `SELECT id, host_id as "hostId", title, address, latitude, longitude, type,
+            price_per_hour as "pricePerHour", photos, rules,
+            entry_instructions as "entryInstructions",
+            max_vehicle_size as "maxVehicleSize",
+            height_restriction_cm as "heightRestrictionCm",
+            is_covered as "isCovered", allow_overnight as "allowOvernight",
+            cancellation_policy as "cancellationPolicy", status,
+            rejection_reason as "rejectionReason",
+            created_at as "createdAt", updated_at as "updatedAt"
+     FROM parking_spots
+     WHERE ($3::text IS NULL OR status = $3)
+     ORDER BY created_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset, status],
+  );
+  return c.json({ listings: result.rows, page, limit });
+});
+
 adminRouter.get('/listings/pending', authenticate, requireRole('admin'), async (c) => {
   const page = Number(c.req.query('page') ?? 1);
   const limit = Math.min(Number(c.req.query('limit') ?? 20), 100);
